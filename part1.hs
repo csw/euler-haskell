@@ -20,4 +20,7 @@ p2_fib_seq :: [Int]
 p2_fib_seq = p2_fib 1 2
 
 p2 :: Int
-p2 = foldl (+) 0 [n | n <- takeWhile (< 4000000) p2_fib_seq, even n]
+p2 = sum [n | n <- takeWhile (< 4000000) p2_fib_seq, even n]
+
+p2a :: Int
+p2a = sum $ filter even $ takeWhile (< 4000000) p2_fib_seq
