@@ -69,15 +69,13 @@ p107 str = totalWeight mat - mstWeight
     where mat = p107_parseMatrix str
           (_, mstWeight) = p107_prims mat
 
-p107_splitter :: (Eq a) => a -> [a] -> Maybe ([a], [a])
-p107_splitter delim [] = Nothing
-p107_splitter delim list =
-    case break (== delim) list of
-      (head, []) -> Just (head, [])
-      (head, _:tail) -> Just (head, tail)
-
 p107_splitOn :: (Eq a) => a -> [a] -> [[a]]
-p107_splitOn = unfoldr . p107_splitter
+p107_splitOn delim l0 = unfoldr splitter l0
+    where splitter []   = Nothing
+          splitter list = 
+              case break (== delim) list of
+                (head, []) -> Just (head, [])
+                (head, _:tail) -> Just (head, tail)
 
 p107_parseMatrix :: String -> AdjMatrix
 p107_parseMatrix str =
@@ -85,14 +83,14 @@ p107_parseMatrix str =
         nVertices = length rowLines
         indices = map Vertex [1..nVertices]
         dims = (Vertex 1, Vertex nVertices)
-        parseVal v = case v of "-" -> 0
-                               _ -> read v
+        parseVal "-" = 0
+        parseVal v = read v
         parseLine = array dims . zip indices . map parseVal . p107_splitOn ','
         rows = map parseLine rowLines
     in AdjMatrix nVertices (array dims $ zip indices rows)
 
 p107_prims :: AdjMatrix -> ([Edge], Int)
-p107_prims mat = (edges, foldl (+) 0 $ map (edgeWeight mat) edges)
+p107_prims mat = (edges, sum $ map (edgeWeight mat) edges)
     where x:xs  = vertices mat
           init  = ((Set.singleton x), (Set.fromList xs))
           edges = unfoldr (p107_prims' mat) init
@@ -106,11 +104,10 @@ p107_prims' mat (inV, outV)
           Just (Edge u v, (Set.insert v inV, Set.delete v outV))
     where
       outNeighbors u = neighborsIn mat u outV
-      nearestOut u =
-          case outNeighbors u of
-            [] -> Nothing
-            nl -> Just $ minimumBy (\(_, d1) (_, d2) -> compare d1 d2) nl
-      inNearest = mapMaybe (maybePair nearestOut) $ Set.elems inV
+      nearest [] = Nothing
+      nearest nl = Just $ minimumBy (\(_, d1) (_, d2) -> compare d1 d2) nl
+      inNearest =
+          mapMaybe (maybePair $ nearest . outNeighbors) $ Set.elems inV
       (u, (v,_)) = minimumBy (\(_,(_,d1)) (_,(_,d2)) -> compare d1 d2)
                    inNearest
 
