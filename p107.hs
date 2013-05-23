@@ -29,10 +29,31 @@ degree (AdjMatrix deg _) = deg
 vertices :: AdjMatrix -> [Vertex]
 vertices mat = map Vertex [1..(degree mat)]
 
+distance :: AdjMatrix -> Vertex -> Vertex -> Maybe Int
+distance (AdjMatrix _ mat) u v =
+    case (mat ! u) ! v of
+      0 -> Nothing
+      n -> Just n
+
 neighbors :: AdjMatrix -> Vertex -> [(Vertex, Int)]
 neighbors (AdjMatrix deg mat) u =
     filter conn $ assocs (mat ! u)
     where conn (v, dist) = dist /= 0
+
+maybeZip :: [a] -> [Maybe b] -> [(a,b)]
+maybeZip [] bs = []
+maybeZip as [] = []
+maybeZip (a:as) (Nothing:bs) = maybeZip as bs
+maybeZip (a:as) ((Just b):bs) = (a,b) : maybeZip as bs
+
+maybePair :: (a -> Maybe b) -> a -> Maybe (a,b)
+maybePair f a = case f a of
+                  Nothing -> Nothing
+                  Just bv -> Just (a,bv)
+
+neighborsIn :: AdjMatrix -> Vertex -> Set Vertex -> [(Vertex, Int)]
+neighborsIn mat u vSet =
+    mapMaybe (maybePair (distance mat u)) $ Set.elems vSet
 
 edgeWeight :: AdjMatrix -> Edge -> Int
 edgeWeight (AdjMatrix _ mat) (Edge u v) = (mat ! u) ! v
@@ -42,6 +63,7 @@ totalWeight (AdjMatrix deg mat) = sum . map vWeight $ assocs mat
     where vWeight (u, adj) = sum $ map ((adj !) . Vertex) [((vid u)+1)..deg]
 
 -- Parse a graph, find the MST, and compute the savings
+-- = 259679
 p107 :: String -> Int
 p107 str = totalWeight mat - mstWeight
     where mat = p107_parseMatrix str
@@ -83,13 +105,17 @@ p107_prims' mat (inV, outV)
     | otherwise            =
           Just (Edge u v, (Set.insert v inV, Set.delete v outV))
     where
-      outNeighbors u =
-          [(v,dv) | (v,dv) <- neighbors mat u, Set.member v outV]
+      outNeighbors u = neighborsIn mat u outV
       nearestOut u =
           case outNeighbors u of
             [] -> Nothing
             nl -> Just $ minimumBy (\(_, d1) (_, d2) -> compare d1 d2) nl
-      inNearest =
-          [(u, fromJust n) | u <- Set.elems inV, let n = nearestOut u, isJust n]
+      inNearest = mapMaybe (maybePair nearestOut) $ Set.elems inV
       (u, (v,_)) = minimumBy (\(_,(_,d1)) (_,(_,d2)) -> compare d1 d2)
                    inNearest
+
+-- 21 ms, not bad!
+main :: IO ()
+main = do
+  str <- readFile "network.txt"
+  print $ p107 str
