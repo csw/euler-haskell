@@ -114,19 +114,6 @@ prims' mat (inV, outV)
                    inNearest
 
 -- Prim's algorithm with PQ
---
--- PQ will have one entry per vertex in Vnew (a.k.a. inV)
---  * PQ entries: key distance, elt (u,v) for the nearest v in outV
---  * break ()
---  * create outV' with new status of v
---  * add binding for v
---  * update binding for u
-
--- data QEntry = QEntry Int Vertex Vertex
---               deriving (Eq, Show, Ord)
-
--- from                :: QEntry -> Vertex
--- from (QEntry _ u _) = u
 
 prim_pq :: AdjMatrix -> ([Edge], Int)
 prim_pq mat = (edges, sum $ map (edgeWeight mat) edges)
@@ -134,8 +121,7 @@ prim_pq mat = (edges, sum $ map (edgeWeight mat) edges)
           outV    = (Set.fromList rest)
           Just (v0, w0) = nearestNeighbor $ neighborsIn mat outV u0
           initQ   = PQ.singleton w0 $ Edge u0 v0
-          init    = (outV, initQ)
-          edges   = unfoldr (prim_pq' mat) init
+          edges   = unfoldr (prim_pq' mat) (outV, initQ)
 
 type PrimPQ = MinPQueue Int Edge
 
@@ -145,19 +131,21 @@ prim_pq' :: AdjMatrix
 prim_pq' mat (outV, pq)
     | PQ.null pq = Nothing
     | otherwise  =
-        Just (edge, (outV', updatePQ mat outV' pq'))
+        Just (edge, (outV', pq'))
       where ((w, edge@(Edge u v)), pqDel) =
                 PQ.deleteFindMin pq
             outV' = Set.delete v outV
-            pq' = foldl (maybeEnqueue mat outV') pqDel [u,v]
+            pqAdd = foldl (maybeEnqueue mat outV') pqDel [u,v]
+            pq' = updatePQ mat outV' pqAdd
 
 -- remove any leading stale elts from the queue and recalculate
 updatePQ :: AdjMatrix -> Set Vertex -> PrimPQ -> PrimPQ
 updatePQ mat outV oldQ = PQ.union remain recalc
     where (stale, remain) =
               PQ.span (\(Edge _ v) -> Set.notMember v outV) oldQ
-          staleU = [u | (_, Edge u _) <- stale]
-          recalcN = mapMaybe (maybePair (nearestNeighbor . neighborsIn mat outV)) staleU
+          recalcN =
+              mapMaybe (maybePair $ nearestNeighbor . neighborsIn mat outV)
+                       [u | (_, Edge u _) <- stale]
           recalc = PQ.fromList [(dist, Edge u v) | (u,(v,dist)) <- recalcN]
 
 -- suitable for folding, with a PrimPQ accumulator and [Vertex]
