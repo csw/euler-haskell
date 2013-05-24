@@ -80,21 +80,22 @@ parseMatrix str = AdjMatrix nVertices (array bounds $ zip indices rows)
           rows = map parseLine rowLines
 
 prims :: AdjMatrix -> ([Edge], Int)
-prims mat = (edges, sum $ map (edgeWeight mat) edges)
+prims mat = (edges, sum weights)
     where
-      x:xs  = vertices mat
-      init  = ((Set.singleton x), (Set.fromList xs))
-      edges = unfoldr primStep init
+      x:xs = vertices mat
+      init = ((Set.singleton x), (Set.fromList xs))
+      es   = unfoldr primStep init
+      (weights, edges) = unzip es
       primStep :: (Set Vertex, Set Vertex)
-                  -> Maybe (Edge, (Set Vertex, Set Vertex))
+                  -> Maybe ((Int, Edge), (Set Vertex, Set Vertex))
       primStep (inV, outV)
           | Set.null outV = Nothing
-          | otherwise     = Just (Edge u v, (inV', outV'))
+          | otherwise     = Just (e, (inV', outV'))
           where
-            inNearest     = shortestEdgesIn mat outV $ Set.elems inV
-            (_, Edge u v) = minimumBy (compareWith fst) inNearest
-            inV'          = Set.insert v inV
-            outV'         = Set.delete v outV
+            inNearest       = shortestEdgesIn mat outV $ Set.elems inV
+            e@(_, Edge u v) = minimumBy (compareWith fst) inNearest
+            inV'            = Set.insert v inV
+            outV'           = Set.delete v outV
 
 -- |Find the shortest possible edges from vertices in us to those in vs.
 shortestEdgesIn :: AdjMatrix -> Set Vertex -> [Vertex] -> [(Int, Edge)]
@@ -112,20 +113,21 @@ nearestNeighbor nl = Just $ minimumBy (compareWith snd) nl
 type PrimPQ = MinPQueue Int Edge
 
 primPQ :: AdjMatrix -> ([Edge], Int)
-primPQ mat = (edges, sum $ map (edgeWeight mat) edges)
+primPQ mat = (edges, sum weights)
     where
       u0:rest = vertices mat
       initOut = (Set.fromList rest)
       Just (v0, w0) = nearestNeighbor $ neighborsIn mat initOut u0
       initQ   = PQ.singleton w0 $ Edge u0 v0
-      edges   = unfoldr primStep (initOut, initQ)
+      es      = unfoldr primStep (initOut, initQ)
+      (weights, edges) = unzip es
       primStep :: (Set Vertex, PrimPQ)
-               -> Maybe (Edge, (Set Vertex, PrimPQ))
+               -> Maybe ((Int, Edge), (Set Vertex, PrimPQ))
       primStep (outV, pq)
           | PQ.null pq = Nothing
-          | otherwise  = Just (Edge u v, (outV', pq'))
+          | otherwise  = Just (e, (outV', pq'))
               where
-                ((w, Edge u v), pqDel) = PQ.deleteFindMin pq
+                (e@(w, Edge u v), pqDel) = PQ.deleteFindMin pq
                 outV' = Set.delete v outV
                 pqAdd = foldl (maybeEnqueue mat outV') pqDel [u,v]
                 pq'   = updatePQ mat outV' pqAdd
