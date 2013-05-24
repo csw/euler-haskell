@@ -117,8 +117,7 @@ primPQ mat = (edges, sum weights)
     where
       u0:rest = vertices mat
       initOut = (Set.fromList rest)
-      Just (v0, w0) = nearestNeighbor $ neighborsIn mat initOut u0
-      initQ   = PQ.singleton w0 $ Edge u0 v0
+      initQ   = maybeEnqueue mat initOut PQ.empty u0
       es      = unfoldr primStep (initOut, initQ)
       (weights, edges) = unzip es
       primStep :: (Set Vertex, PrimPQ)
