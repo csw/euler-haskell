@@ -79,13 +79,16 @@ parseMatrix str = AdjMatrix nVertices (array bounds $ zip indices rows)
           parseLine = array bounds . zip indices . map parseVal . splitOn ','
           rows = map parseLine rowLines
 
+-- Simple implementation of Prim's algorithm, searching the adjacency
+-- matrix directly.
+--
+-- Complexity: O(|V|^2)
 prims :: AdjMatrix -> ([Edge], Int)
 prims mat = (edges, sum weights)
     where
-      x:xs = vertices mat
-      init = ((Set.singleton x), (Set.fromList xs))
-      es   = unfoldr primStep init
-      (weights, edges) = unzip es
+      u0:initOut       = vertices mat
+      init             = ((Set.singleton u0), (Set.fromList initOut))
+      (weights, edges) = unzip $ unfoldr primStep init
       primStep :: (Set Vertex, Set Vertex)
                   -> Maybe ((Int, Edge), (Set Vertex, Set Vertex))
       primStep (inV, outV)
@@ -93,7 +96,7 @@ prims mat = (edges, sum weights)
           | otherwise     = Just (e, (inV', outV'))
           where
             inNearest       = shortestEdgesIn mat outV $ Set.elems inV
-            e@(_, Edge u v) = minimumBy (compareWith fst) inNearest
+            e@(w, Edge u v) = minimumBy (compareWith fst) inNearest
             inV'            = Set.insert v inV
             outV'           = Set.delete v outV
 
@@ -108,8 +111,11 @@ nearestNeighbor :: [(Vertex, Int)] -> Maybe (Vertex, Int)
 nearestNeighbor [] = Nothing
 nearestNeighbor nl = Just $ minimumBy (compareWith snd) nl
 
--- Prim's algorithm with a priority queue
-
+-- Prim's algorithm, using a priority queue for faster lookup.
+--
+-- With the binomial heap used here, I think this should be 
+-- O(|E| log |V|) as for a binary heap implementation, but 
+-- I haven't worked it out.
 type PrimPQ = MinPQueue Int Edge
 
 primPQ :: AdjMatrix -> ([Edge], Int)
@@ -118,8 +124,7 @@ primPQ mat = (edges, sum weights)
       u0:rest = vertices mat
       initOut = (Set.fromList rest)
       initQ   = maybeEnqueue mat initOut PQ.empty u0
-      es      = unfoldr primStep (initOut, initQ)
-      (weights, edges) = unzip es
+      (weights, edges) = unzip $ unfoldr primStep (initOut, initQ)
       primStep :: (Set Vertex, PrimPQ)
                -> Maybe ((Int, Edge), (Set Vertex, PrimPQ))
       primStep (outV, pq)
