@@ -18,6 +18,8 @@ import qualified Data.PQueue.Prio.Min as PQ
 -- Amounts to finding the MST, and the difference between its total
 -- edge weights and that of the original network.
 
+-- Graph data types
+
 newtype Vertex = Vertex { vid :: Int }
     deriving (Eq, Show, Ord, Ix)
 
@@ -43,11 +45,6 @@ neighbors (AdjMatrix deg mat) u =
     filter conn $ assocs (mat ! u)
     where conn (v, dist) = dist /= 0
 
-maybePair :: (a -> Maybe b) -> a -> Maybe (a,b)
-maybePair f a = case f a of
-                  Nothing -> Nothing
-                  Just bv -> Just (a,bv)
-
 neighborsIn :: AdjMatrix -> Set Vertex -> Vertex -> [(Vertex, Int)]
 neighborsIn mat outV u =
     mapMaybe (maybePair $ distance mat u) $ Set.elems outV
@@ -71,82 +68,74 @@ p107p f str = totalWeight mat - mstWeight
     where mat = parseMatrix str
           (_, mstWeight) = f mat
 
-splitOn :: (Eq a) => a -> [a] -> [[a]]
-splitOn delim l0 = unfoldr splitter l0
-    where splitter []   = Nothing
-          splitter list = 
-              case break (== delim) list of
-                (head, []) -> Just (head, [])
-                (head, _:tail) -> Just (head, tail)
-
 parseMatrix :: String -> AdjMatrix
-parseMatrix str =
-    let rowLines = lines str
-        nVertices = length rowLines
-        indices = map Vertex [1..nVertices]
-        dims = (Vertex 1, Vertex nVertices)
-        parseVal "-" = 0
-        parseVal v = read v
-        parseLine = array dims . zip indices . map parseVal . splitOn ','
-        rows = map parseLine rowLines
-    in AdjMatrix nVertices (array dims $ zip indices rows)
+parseMatrix str = AdjMatrix nVertices (array bounds $ zip indices rows)
+    where rowLines = lines str
+          nVertices = length rowLines
+          indices = map Vertex [1..nVertices]
+          bounds = (Vertex 1, Vertex nVertices)
+          parseVal "-" = 0
+          parseVal v = read v
+          parseLine = array bounds . zip indices . map parseVal . splitOn ','
+          rows = map parseLine rowLines
 
 prims :: AdjMatrix -> ([Edge], Int)
 prims mat = (edges, sum $ map (edgeWeight mat) edges)
-    where x:xs  = vertices mat
-          init  = ((Set.singleton x), (Set.fromList xs))
-          edges = unfoldr (prims' mat) init
-
-prims' :: AdjMatrix
-       -> (Set Vertex, Set Vertex)
-       -> Maybe (Edge, (Set Vertex, Set Vertex))
-prims' mat (inV, outV)
-    | Set.null outV        = Nothing
-    | otherwise            =
-          Just (Edge u v, (Set.insert v inV, Set.delete v outV))
     where
-      outNeighbors = neighborsIn mat outV
-      nearest [] = Nothing
-      nearest nl = Just $ minimumBy (\(_, d1) (_, d2) -> compare d1 d2) nl
-      inNearest =
-          mapMaybe (maybePair $ nearest . outNeighbors) $ Set.elems inV
-      (u, (v,_)) = minimumBy (\(_,(_,d1)) (_,(_,d2)) -> compare d1 d2)
-                   inNearest
+      x:xs  = vertices mat
+      init  = ((Set.singleton x), (Set.fromList xs))
+      edges = unfoldr primStep init
+      primStep :: (Set Vertex, Set Vertex)
+                  -> Maybe (Edge, (Set Vertex, Set Vertex))
+      primStep (inV, outV)
+          | Set.null outV = Nothing
+          | otherwise     = Just (Edge u v, (inV', outV'))
+          where
+            inNearest     = shortestEdgesIn mat outV $ Set.elems inV
+            (_, Edge u v) = minimumBy (compareWith fst) inNearest
+            inV'          = Set.insert v inV
+            outV'         = Set.delete v outV
 
--- Prim's algorithm with PQ
+-- |Find the shortest possible edges from vertices in us to those in vs.
+shortestEdgesIn :: AdjMatrix -> Set Vertex -> [Vertex] -> [(Int, Edge)]
+shortestEdgesIn mat vs us = [(w, Edge u v) | (u,(v,w)) <- shortest]
+    where
+      possV = neighborsIn mat vs
+      shortest = mapMaybe (maybePair $ nearestNeighbor . possV) us
 
-prim_pq :: AdjMatrix -> ([Edge], Int)
-prim_pq mat = (edges, sum $ map (edgeWeight mat) edges)
-    where u0:rest = vertices mat
-          outV    = (Set.fromList rest)
-          Just (v0, w0) = nearestNeighbor $ neighborsIn mat outV u0
-          initQ   = PQ.singleton w0 $ Edge u0 v0
-          edges   = unfoldr (prim_pq' mat) (outV, initQ)
+nearestNeighbor :: [(Vertex, Int)] -> Maybe (Vertex, Int)
+nearestNeighbor [] = Nothing
+nearestNeighbor nl = Just $ minimumBy (compareWith snd) nl
+
+-- Prim's algorithm with a priority queue
 
 type PrimPQ = MinPQueue Int Edge
 
-prim_pq' :: AdjMatrix
-          -> (Set Vertex, PrimPQ)
-          -> Maybe (Edge, (Set Vertex, PrimPQ))
-prim_pq' mat (outV, pq)
-    | PQ.null pq = Nothing
-    | otherwise  =
-        Just (edge, (outV', pq'))
-      where ((w, edge@(Edge u v)), pqDel) =
-                PQ.deleteFindMin pq
-            outV' = Set.delete v outV
-            pqAdd = foldl (maybeEnqueue mat outV') pqDel [u,v]
-            pq' = updatePQ mat outV' pqAdd
+primPQ :: AdjMatrix -> ([Edge], Int)
+primPQ mat = (edges, sum $ map (edgeWeight mat) edges)
+    where
+      u0:rest = vertices mat
+      initOut = (Set.fromList rest)
+      Just (v0, w0) = nearestNeighbor $ neighborsIn mat initOut u0
+      initQ   = PQ.singleton w0 $ Edge u0 v0
+      edges   = unfoldr primStep (initOut, initQ)
+      primStep :: (Set Vertex, PrimPQ)
+               -> Maybe (Edge, (Set Vertex, PrimPQ))
+      primStep (outV, pq)
+          | PQ.null pq = Nothing
+          | otherwise  = Just (Edge u v, (outV', pq'))
+              where
+                ((w, Edge u v), pqDel) = PQ.deleteFindMin pq
+                outV' = Set.delete v outV
+                pqAdd = foldl (maybeEnqueue mat outV') pqDel [u,v]
+                pq'   = updatePQ mat outV' pqAdd
 
 -- remove any leading stale elts from the queue and recalculate
 updatePQ :: AdjMatrix -> Set Vertex -> PrimPQ -> PrimPQ
-updatePQ mat outV oldQ = PQ.union remain recalc
+updatePQ mat outV oldQ = PQ.union remain (PQ.fromList recalc)
     where (stale, remain) =
               PQ.span (\(Edge _ v) -> Set.notMember v outV) oldQ
-          recalcN =
-              mapMaybe (maybePair $ nearestNeighbor . neighborsIn mat outV)
-                       [u | (_, Edge u _) <- stale]
-          recalc = PQ.fromList [(dist, Edge u v) | (u,(v,dist)) <- recalcN]
+          recalc = shortestEdgesIn mat outV [u | (_, Edge u _) <- stale]
 
 -- suitable for folding, with a PrimPQ accumulator and [Vertex]
 maybeEnqueue :: AdjMatrix -> Set Vertex -> PrimPQ -> Vertex -> PrimPQ
@@ -155,15 +144,26 @@ maybeEnqueue mat outV pq u =
       Nothing -> pq
       Just (v, w) -> PQ.insert w (Edge u v) pq
 
-nearestNeighbor :: [(Vertex, Int)] -> Maybe (Vertex, Int)
-nearestNeighbor [] = Nothing
-nearestNeighbor nl = Just $ minimumBy (compareWith snd) nl
+-- utility code
 
 compareWith :: (Ord a, Ord b) => (a -> b) -> a -> a -> Ordering
 compareWith f v1 v2 = compare (f v1) (f v2)
+
+maybePair :: (a -> Maybe b) -> a -> Maybe (a,b)
+maybePair f a = case f a of
+                  Nothing -> Nothing
+                  Just bv -> Just (a,bv)
+
+splitOn :: (Eq a) => a -> [a] -> [[a]]
+splitOn delim l0 = unfoldr splitter l0
+    where splitter []   = Nothing
+          splitter list = 
+              case break (== delim) list of
+                (head, []) -> Just (head, [])
+                (head, _:tail) -> Just (head, tail)
 
 -- 21 ms, not bad!
 main :: IO ()
 main = do
   str <- readFile "network.txt"
-  print $ p107p prim_pq str
+  print $ p107p primPQ str
