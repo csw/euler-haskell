@@ -59,3 +59,7 @@ p3_sieve_e' n max nonPrimes
 
 p3_sieve_e     :: Int -> [Int]
 p3_sieve_e max = 2 : p3_sieve_e' 3 max (Set.singleton 2)
+
+-- P4: Find the largest palindrome made from the product of two
+-- 3-digit numbers.
+
